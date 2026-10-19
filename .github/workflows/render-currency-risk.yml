@@ -1,0 +1,61 @@
+name: Render currency risk explainer
+on:
+  push:
+    branches:
+      - codex/currency-risk-colab-video
+    paths:
+      - 'currency_risks_16x9_240s.ipynb'
+      - '.github/workflows/render-currency-risk.yml'
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install video and font dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          python -m pip install --quiet pillow numpy
+      - name: Validate notebook and render one preview frame
+        run: |
+          python - <<'PY'
+          import json, pathlib, ast
+          notebook=json.loads(pathlib.Path('currency_risks_16x9_240s.ipynb').read_text(encoding='utf-8'))
+          source=''.join(notebook['cells'][1]['source'])
+          ast.parse(source)
+          source=source.replace('from google.colab import files','')
+          source=source.replace('/content/','./')
+          setup=source.split('print("Создаю музыку...")')[0]
+          namespace={}
+          exec(compile(setup,'currency_risks_16x9_240s.ipynb','exec'),namespace)
+          frame=namespace['draw_frame'](0)
+          assert frame.size == (1920,1080)
+          frame.save('currency_risks_preview.jpg',quality=90)
+          print('Notebook syntax and first frame OK')
+          PY
+      - name: Render full 240-second MP4
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          notebook=json.loads(pathlib.Path('currency_risks_16x9_240s.ipynb').read_text(encoding='utf-8'))
+          source=''.join(notebook['cells'][1]['source'])
+          source=source.replace('from google.colab import files','')
+          source=source.replace('/content/','./')
+          source=source.replace('files.download(OUT)','print("MP4 ready:", OUT)')
+          source=source.replace('files.download(SRT)','print("SRT ready:", SRT)')
+          exec(compile(source,'currency_risks_16x9_240s.ipynb','exec'))
+          PY
+      - name: Upload video and subtitles
+        uses: actions/upload-artifact@v4
+        with:
+          name: currency_risks_horizontal_240s
+          path: |
+            currency_risks_horizontal_240s.mp4
+            currency_risks_subtitles.srt
+            currency_risks_preview.jpg
+          retention-days: 7
